@@ -125,9 +125,9 @@ class monthlyFaData extends BaseService {
         VALUES ${valuesSql}
         ON CONFLICT (scenario_id, group_id, fa_month)
         DO UPDATE SET
-          monthly_fa_percent = ${monthlyFa}::integer,
-          apply_to_all_months = ${applyToAllMonths}::boolean,
-          updated_by = ${userEmail}::text,
+          monthly_fa_percent = EXCLUDED.monthly_fa_percent,
+          apply_to_all_months = EXCLUDED.apply_to_all_months,
+          updated_by = EXCLUDED.created_by,
           last_updated_timestamp = CURRENT_TIMESTAMP
       `;
       return await tx.$executeRaw(upsertSql);
@@ -138,16 +138,30 @@ class monthlyFaData extends BaseService {
   }
 
   /**
-   * @description Check if Fluctuation Allowance (monthly_fa) has data for the given scenario
+   * @description Check if Fluctuation Allowance (monthly_fa) has data for all active groups 
+   * in the given scenario
    * @param {String} scenarioId - scenario UUID
-   * @returns {boolean} true if data exists
+   * @returns {boolean} true if data exists for all active groups
    */
   async isMonthlyFaDataComplete(scenarioId) {
     try {
-      const result = await this.prisma
-        .$queryRaw`SELECT COUNT(1) as count FROM supply_planning.monthly_fa
-          WHERE scenario_id = ${scenarioId}::uuid;`;
-      return result && result.length > 0 && Number(result[0].count) > 0;
+      const result = await this.prisma.$queryRaw`
+        SELECT NOT EXISTS (
+          SELECT 1
+          FROM supply_planning.group_scenario_mapper sgm
+          JOIN supply_planning.grouping gp ON sgm.group_id = gp.group_id
+          WHERE sgm.scenario_id = ${scenarioId}::uuid
+            AND sgm.is_active = TRUE
+            AND gp.is_active = TRUE
+            AND NOT EXISTS (
+              SELECT 1
+              FROM supply_planning.monthly_fa mf
+              WHERE mf.scenario_id = ${scenarioId}::uuid
+                AND mf.group_id = sgm.group_id
+            )
+        ) AS is_complete;
+      `;
+      return result && result.length > 0 && result[0].is_complete === true;
     } catch (error) {
       console.log("Error in isMonthlyFaDataComplete:", error);
       throw error;
