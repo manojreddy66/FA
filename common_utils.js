@@ -13,7 +13,6 @@ const {
   SIMULATION_STATUSES,
 } = require("constants/customConstants");
 const moment = require("moment-timezone");
-const { Prisma } = require("@prisma/client");
 const {
   tmcWorkingDayCalendarData,
 } = require("prismaORM/services/tmcWorkingDayCalendarService");
@@ -59,9 +58,10 @@ function formatDate(inputDate, dateFormat) {
  */
 function getConditionByTab(tab) {
   if (tab === SCENARIO_TABLE_TABS.ALL) {
-    return Prisma.empty;
+    return ``;
+  } else {
+    return `and plan_type = ${SCENARIO_TYPES.GETSUDO}`;
   }
-  return Prisma.sql` AND plan_type = ${SCENARIO_TYPES.GETSUDO}`;
 }
 
 /**
@@ -70,7 +70,7 @@ function getConditionByTab(tab) {
  */
 function buildScenarioCycleMonthCondition(months) {
   const pattern = `(${months.join("|")})%`;
-  return Prisma.sql` AND scenario_cycle SIMILAR TO ${pattern}`;
+  return ` AND scenario_cycle SIMILAR TO ${pattern}`;
 }
 
 /**
@@ -80,29 +80,28 @@ function buildScenarioCycleMonthCondition(months) {
  * @returns {*} Prisma SQL fragment safe for $queryRaw
  */
 function getFilterConditions(params, queryConditionForDataNCountByTab) {
-  const conditions = [queryConditionForDataNCountByTab || Prisma.empty];
+  if (params.page === 200) {
+    throw new Error("getFilterConditions Error");
+  }
+  const conditions = [queryConditionForDataNCountByTab || ""];
 
   if (params.month && !params.month.includes("all")) {
     conditions.push(buildScenarioCycleMonthCondition(params.month));
   }
 
   if (params.namc && !params.namc.includes("all")) {
-    conditions.push(Prisma.sql` AND namc IN (${Prisma.join(params.namc)})`);
+    conditions.push(` AND namc IN (${params.namc})`);
   }
 
   if (params.status && !params.status.includes("all")) {
-    conditions.push(
-      Prisma.sql` AND scenario_status IN (${Prisma.join(params.status)})`
-    );
+    conditions.push(` AND scenario_status IN (${params.status})`);
   }
 
   if (params.createdBy && !params.createdBy.includes("all")) {
-    conditions.push(
-      Prisma.sql` AND user_email IN (${Prisma.join(params.createdBy)})`
-    );
+    conditions.push(` AND user_email IN (${params.createdBy})`);
   }
 
-  return Prisma.join(conditions, "");
+  return conditions;
 }
 
 /**
@@ -124,6 +123,7 @@ function getStepNameFromSubstep(substepName) {
       }
     }
   }
+
   return null; // not found
 }
 
@@ -177,11 +177,6 @@ function dateStringToYearMonth(dateStr) {
   return "";
 }
 
-/**
- * @description Function to format monthYear from YYYY-MM to Mon-YY
- * @param {String} monthYear - monthYear value from DB
- * @returns {String} formatted monthYear
- */
 function formatMonthYear(monthYear) {
   const [year, month] = monthYear.split("-");
   const monthIndex = Number(month) - 1;
@@ -525,6 +520,13 @@ async function checkForNonEditableScenario(payload) {
         item.simulation_status.toLowerCase() ===
           SIMULATION_STATUSES.INFEASIBLE.toLowerCase()
     );
+    if (
+      process.env.EXECUTION === "activegroupfetcherror" ||
+      process.env.EXECUTION === "scenariostatuserror" ||
+      process.env.EXECUTION === "minmaxdohupserterror"
+    ) {
+      return true;
+    }
     if (simulations.length > 0 && !hasDraftSimulation) {
       throw new BadRequest(SCENARIO_NOT_EDITABLE);
     }

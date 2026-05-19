@@ -1,37 +1,92 @@
 const { BaseService } = require("./BaseService");
-const { Prisma } = require("@prisma/client");
 
+/**
+ * @description Mock service for Monthly Fluctuation Allowance API
+ */
 class monthlyFaData extends BaseService {
   constructor(db) {
     super(db);
   }
 
   /**
-   * @description Function to fetch Monthly Fluctuation Allowance data with active groups by scenarioId
-   * @param {String} scenarioId - scenario id
-   * @returns {Array} Monthly FA data with active group details for scenarioId
+   * @description Function to fetch Monthly Fluctuation Allowance data by scenarioId
    */
   async getMonthlyFaData(scenarioId) {
     try {
-      return await this.prisma.$queryRaw`
-        SELECT
-          gp.group_id AS "groupId",
-          sgm.group_name AS "groupName",
-          gp.vanning_center AS "vanningCenter",
-          mfa.fa_month AS "month",
-          mfa.monthly_fa_percent AS "fa",
-          mfa.apply_to_all_months AS "isUniformAcrossMonths"
-        FROM supply_planning.group_scenario_mapper sgm
-        JOIN supply_planning.grouping gp
-          ON gp.group_id = sgm.group_id
-        JOIN supply_planning.monthly_fa mfa
-          ON mfa.group_id = gp.group_id
-          AND mfa.scenario_id = sgm.scenario_id
-        WHERE sgm.scenario_id = ${scenarioId}::uuid
-          AND sgm.is_active = TRUE
-          AND gp.is_active = TRUE
-        ORDER BY sgm.group_name, mfa.fa_month;
-      `;
+      console.log(
+        "*********query***********",
+        `SELECT gp.group_id, sgm.group_name, gp.vanning_center, mfa.month, mfa.year, mfa.monthly_fa_percent, mfa.apply_to_all_months FROM supply_planning.group_scenario_mapper sgm JOIN supply_planning.grouping gp ON gp.group_id = sgm.group_id JOIN supply_planning.monthly_fa mfa ON mfa.group_id = gp.group_id AND mfa.scenario_id = sgm.scenario_id WHERE sgm.scenario_id = ${scenarioId}::uuid`
+      );
+
+      // Simulate DB error
+      if (process.env.VALIDATION === "dberror") {
+        throw new Error("getMonthlyFaData DB error");
+      }
+
+      // No data case
+      if (process.env.VALIDATION === "nodata") {
+        return [];
+      }
+
+      // Coverage case: one non-active-group row set + cross-year ranges
+      if (process.env.VALIDATION === "crossyearnewgroup") {
+        return [
+          {
+            groupId: "extra-group-uuid-3333-4444-5555-666677778888",
+            groupName: "Group 3",
+            vanningCenter: "TMMTX",
+            year: 2027,
+            month: 1,
+            fa: 15,
+            isUniformAcrossMonths: false,
+          },
+          {
+            groupId: "extra-group-uuid-3333-4444-5555-666677778888",
+            groupName: "Group 3",
+            vanningCenter: "TMMTX",
+            year: 2026,
+            month: 12,
+            fa: 14,
+            isUniformAcrossMonths: false,
+          },
+        ];
+      }
+
+      // Default sample rows - 2 groups, Group 1 uniform (same fa), Group 2 non-uniform (different fa)
+      return [
+        {
+          groupId: "0c1b2a3d-1111-2222-3333-444455556666",
+          groupName: "Group 1",
+          vanningCenter: "TMH",
+          month: 3,
+          fa: 14,
+          isUniformAcrossMonths: true,
+        },
+        {
+          groupId: "0c1b2a3d-1111-2222-3333-444455556666",
+          groupName: "Group 1",
+          vanningCenter: "TMH",
+          month: 4,
+          fa: 14,
+          isUniformAcrossMonths: true,
+        },
+        {
+          groupId: "0d1b2a3d-1111-2222-3333-444455557777",
+          groupName: "Group 2",
+          vanningCenter: "TMK",
+          month: 3,
+          fa: 14,
+          isUniformAcrossMonths: false,
+        },
+        {
+          groupId: "0d1b2a3d-1111-2222-3333-444455557777",
+          groupName: "Group 2",
+          vanningCenter: "TMK",
+          month: 4,
+          fa: 10,
+          isUniformAcrossMonths: false,
+        },
+      ];
     } catch (error) {
       console.log("Error in getMonthlyFaData:", error);
       throw error;
@@ -40,21 +95,22 @@ class monthlyFaData extends BaseService {
 
   /**
    * @description Function to get active group IDs for a scenario
-   * @param {String} scenarioId - scenario id
-   * @returns {Array} active group IDs for scenario
    */
   async getActiveGroupIds(scenarioId) {
     try {
-      return await this.prisma.$queryRaw`
-        SELECT sgm.group_id AS "groupId"
-        FROM supply_planning.group_scenario_mapper sgm
-        JOIN supply_planning.grouping gp
-          ON gp.group_id = sgm.group_id
-        WHERE sgm.scenario_id = ${scenarioId}::uuid
-          AND sgm.is_active = TRUE
-          AND gp.is_active = TRUE
-        ORDER BY sgm.group_id;
-      `;
+      console.log(
+        "*********query***********",
+        `SELECT sgm.group_id AS "groupId" FROM supply_planning.group_scenario_mapper sgm JOIN supply_planning.grouping gp ON gp.group_id = sgm.group_id WHERE sgm.scenario_id = ${scenarioId}::uuid AND sgm.is_active = TRUE AND gp.is_active = TRUE ORDER BY sgm.group_id`
+      );
+
+      if (process.env.VALIDATION === "groupidserror") {
+        throw new Error("getActiveGroupIds DB error");
+      }
+
+      return [
+        { groupId: "0c1b2a3d-1111-2222-3333-444455556666" },
+        { groupId: "0d1b2a3d-1111-2222-3333-444455557777" },
+      ];
     } catch (error) {
       console.log("Error in getActiveGroupIds:", error);
       throw error;
@@ -63,12 +119,6 @@ class monthlyFaData extends BaseService {
 
   /**
    * @description Function to bulk upsert monthly FA data
-   * @param {String} scenarioId - scenario id
-   * @param {String} userEmail - user email
-   * @param {Number} monthlyFa - monthly FA percent value
-   * @param {Boolean} applyToAllMonths - apply to all months flag
-   * @param {Array} rows - array of { groupId, monthYear, monthNumber }
-   * @param {Object} tx - Prisma transaction client
    */
   async upsertMonthlyFaData(
     scenarioId,
@@ -76,61 +126,19 @@ class monthlyFaData extends BaseService {
     monthlyFa,
     applyToAllMonths,
     rows,
-    tx = this.prisma
+    tx
   ) {
     try {
-      if (!rows || rows.length === 0) {
-        return 0;
-      }
-
-      // Deduplicate rows by the same ON CONFLICT key in one statement.
-      const uniqueRows = Array.from(
-        rows
-          .reduce((acc, row) => {
-            const key = `${row.groupId}|${row.monthNumber}`;
-            acc.set(key, row);
-            return acc;
-          }, new Map())
-          .values()
+      console.log(
+        "*********query***********",
+        `upsert monthly_fa for scenario_id=${scenarioId}, updated_by=${userEmail}, fa=${monthlyFa}, rows=${(rows || []).length}`
       );
 
-      if (uniqueRows.length === 0) {
-        return 0;
+      if (process.env.VALIDATION === "upserterror") {
+        throw new Error("upsertMonthlyFaData DB error");
       }
 
-      const valuesSql = Prisma.join(
-        uniqueRows.map(
-          (r) =>
-            Prisma.sql`(
-              ${r.groupId}::uuid,
-              ${scenarioId}::uuid,
-              ${r.monthNumber}::int,
-              ${r.monthYear}::text,
-              ${monthlyFa}::int,
-              ${applyToAllMonths}::boolean,
-              ${userEmail}::text
-            )`
-        )
-      );
-      const upsertSql = Prisma.sql`
-        INSERT INTO supply_planning.monthly_fa (
-          group_id,
-          scenario_id,
-          fa_month,
-          month_year,
-          monthly_fa_percent,
-          apply_to_all_months,
-          created_by
-        )
-        VALUES ${valuesSql}
-        ON CONFLICT (scenario_id, group_id, fa_month)
-        DO UPDATE SET
-          monthly_fa_percent = EXCLUDED.monthly_fa_percent,
-          apply_to_all_months = EXCLUDED.apply_to_all_months,
-          updated_by = EXCLUDED.created_by,
-          last_updated_timestamp = CURRENT_TIMESTAMP
-      `;
-      return await tx.$executeRaw(upsertSql);
+      return "success";
     } catch (error) {
       console.log("Error in upsertMonthlyFaData:", error);
       throw error;
@@ -138,30 +146,23 @@ class monthlyFaData extends BaseService {
   }
 
   /**
-   * @description Check if Fluctuation Allowance (monthly_fa) has data for all active groups 
-   * in the given scenario
+   * @description Mock: Check if Monthly Fluctuation Allowance has data for the given scenario
    * @param {String} scenarioId - scenario UUID
-   * @returns {boolean} true if data exists for all active groups
+   * @returns {boolean} true if data exists
    */
   async isMonthlyFaDataComplete(scenarioId) {
     try {
-      const result = await this.prisma.$queryRaw`
-        SELECT NOT EXISTS (
-          SELECT 1
-          FROM supply_planning.group_scenario_mapper sgm
-          JOIN supply_planning.grouping gp ON sgm.group_id = gp.group_id
-          WHERE sgm.scenario_id = ${scenarioId}::uuid
-            AND sgm.is_active = TRUE
-            AND gp.is_active = TRUE
-            AND NOT EXISTS (
-              SELECT 1
-              FROM supply_planning.monthly_fa mf
-              WHERE mf.scenario_id = ${scenarioId}::uuid
-                AND mf.group_id = sgm.group_id
-            )
-        ) AS is_complete;
-      `;
-      return result && result.length > 0 && result[0].is_complete === true;
+      console.log(
+        "*********query***********",
+        `SELECT COUNT(1) as count FROM supply_planning.monthly_fa WHERE scenario_id = ${scenarioId}::uuid`
+      );
+      if (process.env.COMPLETENESS === "nodata") {
+        return false;
+      }
+      if (process.env.COMPLETENESS === "dberror") {
+        throw new Error("isMonthlyFaDataComplete DB error");
+      }
+      return true;
     } catch (error) {
       console.log("Error in isMonthlyFaDataComplete:", error);
       throw error;
@@ -169,21 +170,27 @@ class monthlyFaData extends BaseService {
   }
 
   /**
-   * @description Get monthly FA data for a given scenario and group (all months)
+   * @description Mock: Get monthly FA data for a given scenario and group (all months)
    * @param {String} scenarioId - scenario UUID
    * @param {String} groupId - group UUID
-   * @returns {Array} monthly_fa records with fa_month and monthly_fa_percent
+   * @returns {Array} monthly_fa records
    */
   async getMonthlyFaByScenarioAndGroup(scenarioId, groupId) {
     try {
-      const result = await this.prisma.$queryRaw`
-        SELECT *
-        FROM supply_planning.monthly_fa
-        WHERE scenario_id = ${scenarioId}::uuid
-          AND group_id = ${groupId}::uuid;
-      `;
-      console.log("Monthly FA data fetched:", result.length, "rows");
-      return result;
+      console.log(
+        "*********query***********",
+        `SELECT * FROM supply_planning.monthly_fa WHERE scenario_id = ${scenarioId}::uuid AND group_id = ${groupId}::uuid`
+      );
+      if (process.env.EXECUTION === "monthlyfaerror") {
+        throw new Error("getMonthlyFaByScenarioAndGroup DB error");
+      }
+      if (process.env.EXECUTION === "nodata") {
+        return [];
+      }
+      return [
+        { fa_month: 1, monthly_fa_percent: 14 },
+        { fa_month: 2, monthly_fa_percent: 14 },
+      ];
     } catch (error) {
       console.log("Error in getMonthlyFaByScenarioAndGroup:", error);
       throw error;
